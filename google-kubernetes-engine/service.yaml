@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webserver
+  labels:
+    app: go-web
+    service: webserver
+spec:
+  ports:
+  - port: 8080
+    name: http
+  selector:
+    app: go-web
