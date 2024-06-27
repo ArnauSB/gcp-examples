@@ -5,38 +5,48 @@ from google.cloud import pubsub_v1
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
 
-# Configurar el cliente de Pub/Sub
+# Configure Pub/Sub client
+PROJECT = os.environ.get('PROJECT')
+SUBSCRIPTION = os.environ.get('SUBSCRIPTION')
 subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path('${PROJECT}', '${SUBSCRIPTION}')
+subscription_path = pubsub_v1.SubscriberClient().subscription_path(PROJECT, SUBSCRIPTION)
 
-# Configurar el cliente de Compute Engine
+# Configure Compute Engine client
 compute = discovery.build('compute', 'v1', credentials=GoogleCredentials.get_application_default())
 
+# Configure logging
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def start_stop_vm(event, context):
-    # Obtener el mensaje del evento (en formato base64)
+    # Get the event message (base64)
     message_bytes = base64.b64decode(event['data'])
     message = message_bytes.decode('utf-8')
 
-    # Obtener el ID del mensaje
+    # Get the ID of the message
     message_id = context.event_id
 
-    # Obtener el nombre de la VM y la acción a realizar
-    vm_name, action = message.split(':')
+    # Split the message to get the VM name, the zone and the action
+    try:
+        vm_name, zone, action = message.split(':')
+    except ValueError:
+        logger.error('Invalid message format. Expected: zone:vm_name:action')
+        return
 
-    # Determinar la acción a realizar
+    # Choose action to perform
     if action == 'start':
         action_func = start_vm
     elif action == 'stop':
         action_func = stop_vm
     else:
-        print(f'Error: Acción no válida recibida en el mensaje: {action}')
+        logger.error(f'Non valid action: {action}')
         return
 
-    # Ejecutar la acción en la VM
-    action_func(vm_name)
-    print(f'Acción "{action}" realizada en la VM "{vm_name}"')
+    # Execute the action to the VM
+    action_func(vm_name, zone)
+    logger.info(f'Action "{action}" done to VM "{vm_name}" in zone "{zone}"')
 
-    # Confirmar la recepción del mensaje
+    # Ack reception of the message
     subscriber.modify_ack_deadline(
         request={
             'subscription': subscription_path,
@@ -45,18 +55,26 @@ def start_stop_vm(event, context):
         }
     )
 
-def start_vm(vm_name):
-    # Enviar la solicitud para iniciar la VM
-    compute.instances().start(
-        project='${PROJECT}',
-        zone='europe-southwest1-a',
-        instance=vm_name
-    ).execute()
+def start_vm(vm_name, zone):
+    # Send request to start the VM
+    try:
+        compute.instances().start(
+            project=PROJECT,
+            zone=zone,
+            instance=vm_name
+        ).execute()
+        logger.info(f'VM "{vm_name}" started in zone "{zone}"')
+    except Exception as e:
+        logger.error(f'Error starting VM "{vm_name}": {e}')
 
-def stop_vm(vm_name):
-    # Enviar la solicitud para detener la VM
-    compute.instances().stop(
-        project='${PROJECT}',
-        zone='europe-southwest1-a',
-        instance=vm_name
-    ).execute()
+def stop_vm(vm_name, zone):
+    # Send request to stop the VM
+    try:
+        compute.instances().stop(
+            project=PROJECT,
+            zone=zone,
+            instance=vm_name
+        ).execute()
+        logger.info(f'VM "{vm_name}" stopped in zone "{zone}"')
+    except Exception as e:
+        logger.error(f'Error stopping VM "{vm_name}": {e}')
