@@ -48,6 +48,7 @@ Now the Nginx proxy is created but nothing is listening on `http://127.0.0.1:808
 
 ```bash
 cd ~/
+export PATH=$PATH:/usr/local/go/bin
 go run webserver.go -http=127.0.0.1:8080
 ```
 
