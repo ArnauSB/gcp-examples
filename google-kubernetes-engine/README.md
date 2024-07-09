@@ -49,7 +49,7 @@ kubectl apply -f service.yaml
 Now we can also expose it, in our case as load balancer service, so it can be accessible from the Internet:
 
 ```bash
-kubectl apply -f service.yaml
+kubectl apply -f lb-service.yaml
 ```
 
 Wait few seconds so the load balancer is created and get the public IP:
