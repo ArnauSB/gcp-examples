@@ -38,6 +38,8 @@ def start_stop_vm(event, context):
         action_func = start_vm
     elif action == 'stop':
         action_func = stop_vm
+    elif action == 'create':
+        action_func = create_vm
     else:
         logger.error(f'Non valid action: {action}')
         return
@@ -78,3 +80,46 @@ def stop_vm(vm_name, zone):
         logger.info(f'VM "{vm_name}" stopped in zone "{zone}"')
     except Exception as e:
         logger.error(f'Error stopping VM "{vm_name}": {e}')
+
+def create_vm(vm_name, zone):
+    # Send request to create the VM
+    try:
+        image_response = compute.images().getFromFamily(
+            project='debian-cloud', family='debian-11').execute()
+        source_disk_image = image_response['selfLink']
+
+        machine_type = f"zones/{zone}/machineTypes/e2-small"
+        config = {
+            'name': vm_name,
+            'machineType': machine_type,
+            'disks': [
+                {
+                    'boot': True,
+                    'autoDelete': True,
+                    'initializeParams': {
+                        'sourceImage': source_disk_image,
+                    }
+                }
+            ],
+            'networkInterfaces': [{
+                'network': 'global/networks/default',
+                'accessConfigs': [
+                    {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
+                ]
+            }],
+            'serviceAccounts': [{
+                'email': 'default',
+                'scopes': [
+                    'https://www.googleapis.com/auth/devstorage.read_write',
+                    'https://www.googleapis.com/auth/logging.write'
+                ]
+            }]
+        }
+        compute.instances().insert(
+            project=PROJECT,
+            zone=zone,
+            body=config).execute()
+        logger.info(f'VM "{vm_name}" created in zone "{zone}"')
+    except Exception as e:
+       logger.error(f'Error creating VM "{vm_name}": {e}') 
+    
