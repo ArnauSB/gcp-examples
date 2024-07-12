@@ -17,6 +17,7 @@ sudo apt-get install nginx -y
 Verify that Go works:
 
 ```bash
+export PATH=$PATH:/usr/local/go/bin
 go version
 ```
 
