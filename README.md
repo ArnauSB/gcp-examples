@@ -5,3 +5,4 @@ This repo is intended to use demonstration applications that can be deployed in 
 - [Compute Engine](compute-engine/)
 - [Google Kubernetes Engine](google-kubernetes-engine/)
 - [Cloud Functions](cloud-functions/)
+- [API Gateway](api-management/)
