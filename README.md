@@ -6,3 +6,4 @@ This repo is intended to use demonstration applications that can be deployed in 
 - [Google Kubernetes Engine](google-kubernetes-engine/)
 - [Cloud Functions](cloud-functions/)
 - [API Gateway](api-management/)
+- [Cloud SQL](cloud-sql/)
