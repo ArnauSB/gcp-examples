@@ -6,6 +6,6 @@ handlers:
   script: auto
 
 vpc_access_connector:
-  name:  projects/cre-upgrade/locations/europe-west1/connectors/run-connector  # Replace with your project ID
+  name:  # Replace with your connector ID
 
-#service: iot
+service: iot
