@@ -1,0 +1,6 @@
+functions-framework==3.*
+Flask
+sqlalchemy
+gunicorn
+pg8000
+google-cloud-pubsub

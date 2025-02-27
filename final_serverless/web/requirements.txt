@@ -1,0 +1,5 @@
+Flask
+gunicorn
+sqlalchemy
+pg8000
+google-cloud-secret-manager
