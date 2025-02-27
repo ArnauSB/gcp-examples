@@ -1,0 +1,11 @@
+runtime: python312
+entrypoint: gunicorn -b :8080 main:app
+
+handlers:
+- url: /.*
+  script: auto
+
+vpc_access_connector:
+  name:  projects/cre-upgrade/locations/europe-west1/connectors/run-connector  # Replace with your project ID
+
+#service: iot
