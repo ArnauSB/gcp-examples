@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Mensajes API</title>
+</head>
+<body>
+  <h1>API de Mensajes</h1>
+  <form id="form">
+    <input type="text" id="content" placeholder="Escribe un mensaje" required>
+    <button type="submit">Agregar</button>
+  </form>
+  <ul id="messages"></ul>
+
+  <script>
+    const form = document.getElementById('form');
+    const list = document.getElementById('messages');
+
+    async function loadMessages() {
+      const res = await fetch('/messages');
+      const data = await res.json();
+      list.innerHTML = '';
+      data.forEach(msg => {
+        const li = document.createElement('li');
+        li.textContent = `#${msg.id}: ${msg.content}`;
+        list.appendChild(li);
+      });
+    }
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const content = document.getElementById('content').value;
+      await fetch('/messages', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content})
+      });
+      document.getElementById('content').value = '';
+      loadMessages();
+    };
+
+    loadMessages();
+  </script>
+</body>
+</html>
