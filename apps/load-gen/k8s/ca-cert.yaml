@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: load-gen-ca
+type: Opaque
+data:
+  ca.crt: "base64CA"

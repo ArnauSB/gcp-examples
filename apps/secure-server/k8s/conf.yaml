@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-server
+  labels:
+    app: secure-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secure-server
+  template:
+    metadata:
+      labels:
+        app: secure-server
+    spec:
+      containers:
+      - name: secure-server-app
+        image: arnausenserrich/secure-server:latest
+        ports:
+        - containerPort: 443
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-server
+spec:
+  selector:
+    app: secure-server
+  ports:
+  - protocol: TCP
+    port: 443
+    targetPort: 443
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: secure-server-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: secure-server
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50 

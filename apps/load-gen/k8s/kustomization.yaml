@@ -1,0 +1,9 @@
+resources:
+- namespace.yaml
+- sa.yaml
+- ca-cert.yaml
+- cm-urls.yaml
+- deployment.yaml
+- service.yaml
+
+namespace: load-gen
