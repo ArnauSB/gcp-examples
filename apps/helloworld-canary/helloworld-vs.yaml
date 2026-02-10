@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: helloworld-vs
+  namespace: helloworld
+spec:
+  hosts:
+  - "helloworld.34.14.31.39.nip.io"
+  gateways:
+  - istio-system/bookinfo-gateway
+  http:
+  - name: primary-route
+    route:
+    - destination:
+        host: helloworld-stable
+      weight: 100
+    - destination:
+        host: helloworld-canary
+      weight: 0
