@@ -17,7 +17,7 @@ spec:
       serviceAccountName: app-load-gen
       containers:
       - name: app-load-gen
-        image: arnausenserrich/load-gen:v1
+        image: arnausenserrich/load-gen:latest
         imagePullPolicy: Always
         resources:
           requests:

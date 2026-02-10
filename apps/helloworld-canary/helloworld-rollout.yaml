@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: helloworld
+  namespace: helloworld
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: helloworld
+  template:
+    metadata:
+      labels:
+        app: helloworld
+    spec:
+      containers:
+      - name: helloworld
+        image: docker.io/istio/examples-helloworld-v1:1.0
+        ports:
+        - containerPort: 5000
+  strategy:
+    canary:
+      canaryService: helloworld-canary
+      stableService: helloworld-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: helloworld-vs
+            routes:
+            - primary-route
+      steps:
+      - setWeight: 10
+      - pause: 
+          duration: 1m
+      - setWeight: 30
+      - pause: 
+          duration: 1m
+      - setWeight: 100

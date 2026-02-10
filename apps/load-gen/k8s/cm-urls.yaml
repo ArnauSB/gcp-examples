@@ -5,3 +5,4 @@ metadata:
 data:
   urls: |
     https://secure-server.default.svc.cluster.local/status
+    http://productpage.bookinfo.svc.cluster.local:9080/productpage
