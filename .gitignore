@@ -9,3 +9,7 @@
 *.key
 *.csr
 *.srl
+# Demo
+demos/deploy-to-cloud-run/app*
+demos/deploy-to-cloud-run/Dockerfile
+demos/deploy-to-cloud-run/requirements.txt

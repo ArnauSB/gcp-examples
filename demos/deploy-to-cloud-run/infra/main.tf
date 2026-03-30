@@ -46,3 +46,37 @@ resource "google_cloudbuild_trigger" "api_trigger" {
 
   depends_on = [google_project_service.apis]
 }
+
+# 5. Create the base Cloud Run service
+resource "google_cloud_run_v2_service" "api_service" {
+  name     = "my-api-service"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    containers {
+      # Dummy image just to initialize the service so Terraform can track it
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
+    }
+  }
+
+  # Tell Terraform to ignore changes made by Cloud Build
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image, # Ignore when Cloud Build pushes the Python API
+      traffic,                         # Ignore when Cloud Build splits 90/10
+      client,
+      client_version
+    ]
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# 6. Make the Cloud Run service public
+resource "google_cloud_run_service_iam_member" "public_access" {
+  location = google_cloud_run_v2_service.api_service.location
+  service  = google_cloud_run_v2_service.api_service.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
