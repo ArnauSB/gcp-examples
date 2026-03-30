@@ -1,3 +1,9 @@
+.env
+*.tfvars
+*terraform.tfstate
+*terraform.tfstate.backup
+*.terraform/
+*.terraform.lock.hcl
 # Ignore certs stuff
 *.crt
 *.key
