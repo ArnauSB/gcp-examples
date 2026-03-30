@@ -1,5 +1,15 @@
+.env
+*.tfvars
+*terraform.tfstate
+*terraform.tfstate.backup
+*.terraform/
+*.terraform.lock.hcl
 # Ignore certs stuff
 *.crt
 *.key
 *.csr
 *.srl
+# Demo
+demos/deploy-to-cloud-run/app*
+demos/deploy-to-cloud-run/Dockerfile
+demos/deploy-to-cloud-run/requirements.txt

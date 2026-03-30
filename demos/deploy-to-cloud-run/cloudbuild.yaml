@@ -1,0 +1,42 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA'
+      - '.'
+    dir: 'demos/deploy-to-cloud-run'
+
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'my-api-service'
+      - '--image'
+      - 'europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA'
+      - '--region'
+      - 'europe-west1'
+      - '--allow-unauthenticated'
+      #- '--no-traffic' # Deploys the new revision but routes 0% traffic to it
+
+  # Update Traffic Splitting (90% to previous, 10% to new)
+  #- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #  entrypoint: gcloud
+  #  args:
+  #    - 'run'
+  #    - 'services'
+  #    - 'update-traffic'
+  #    - 'my-api-service'
+  #    - '--region'
+  #    - 'europe-west1'
+  #    - '--to-revisions'
+  #    - 'LATEST=10' # Assigns 10% of traffic to the revision we just deployed
