@@ -50,15 +50,27 @@ Now the Nginx proxy is created but nothing is listening on `http://127.0.0.1:808
 ```bash
 cd ~/
 export PATH=$PATH:/usr/local/go/bin
-go run webserver.go -http=127.0.0.1:8080
+PORT=8080 go run webserver.go
 ```
 
 Now the server should be available and working.
 
+### Available endpoints
+
+| Path | Description |
+|------|-------------|
+| `/` | Hostname, remote addr, user-agent, and GCP env vars (`PROJECT_ID`, `ZONE`, `INSTANCE_ID`) |
+| `/headers` | All request headers as JSON |
+| `/env` | All environment variables as JSON |
+| `/info` | Live GCP instance metadata (hostname, zone, machine-type, id) |
+| `/healthz` | Health check — returns `{"status":"ok"}` |
+
+Logs are emitted as structured JSON to stdout, compatible with Google Cloud Logging.
+
 ## Automate startup
 
-We’ve now accomplished what we set out to do. But what if the machine restarts? We need to configure the system to run the goto process on start-up.
-Firt let's build the server and move it to a shared directory:
+We’ve now accomplished what we set out to do. But what if the machine restarts? We need to configure the system to run the Go process on start-up.
+First let’s build the server and move it to a shared directory:
 
 ```bash
 go build webserver.go
@@ -66,70 +78,39 @@ sudo mv webserver /usr/sbin/webserver
 sudo chown root:root /usr/sbin/webserver
 ```
 
-Now let's create a basic `init.d` script in `/etc/init.d/webserver`:
+Create a systemd unit file at `/etc/systemd/system/webserver.service`:
 
-```bash
-#!/bin/bash
+```ini
+[Unit]
+Description=Go Web Server
+After=network.target
 
-NAME="webserver"
-GO_BINARY_PATH="/usr/sbin/webserver"
-PIDFILE="/var/run/webserver.pid"
+[Service]
+ExecStart=/usr/sbin/webserver
+Restart=always
+RestartSec=5
+User=www-data
+Environment=PORT=8080
+StandardOutput=journal
+StandardError=journal
 
-start() {
-  "$GO_BINARY_PATH"
-}
-
-stop() {
-  pkill -f "^$GO_BINARY_PATH" -TERM
-  sleep 10
-  pkill -f "^$GO_BINARY_PATH" -KILL
-}
-
-case "$1" in
-  start)
-    echo -n "Starting $NAME server: "
-    start-stop-daemon --start --make-pidfile --background --pidfile $PIDFILE --exec $GO_BINARY_PATH
-    echo "started."
-    ;;
-  stop)
-    echo -n "Stopping $NAME server: "
-    start-stop-daemon --stop --quiet --pidfile $PIDFILE --exec $GO_BINARY_PATH
-    rm -f $PIDFILE
-    echo "stopped."
-    ;;
-  restart)
-    echo -n "Restarting $NAME server: "
-    stop
-    start
-    echo "restarted."
-    ;;
-  *)
-    echo "Usage: $0 {start|stop|restart}"
-    exit 1
-    ;;
-esac
-
-exit 0
+[Install]
+WantedBy=multi-user.target
 ```
 
-Now we can execute it:
+Reload systemd, enable the service to start on boot, and start it now:
 
 ```bash
-sudo chmod +x /etc/init.d/webserver
-sudo /etc/init.d/webserver start
+sudo systemctl daemon-reload
+sudo systemctl enable webserver
+sudo systemctl start webserver
 ```
 
-And last add the service to `rc.d` so that it is launched on start-up:
+Check the service status and logs:
 
 ```bash
-sudo update-rc.d webserver defaults
+sudo systemctl status webserver
+sudo journalctl -u webserver -f
 ```
 
-Verify the link has been created, otherwise create it:
-
-```bash
-sudo ls -l /etc/rc[0-6].d/S*webserver
-sudo ln -s /etc/init.d/webserver /etc/rc2.d/S02webserver
-```
-
-And that’s it. There is more you could do, but these are the bare essentials to reliably run a Go (or any other) web service behind Nginx under Debian.
+And that’s it. systemd handles restarts automatically and integrates with `journald` for log collection.
