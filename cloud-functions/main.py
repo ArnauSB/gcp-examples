@@ -5,12 +5,15 @@ import logging
 from google.api_core import exceptions
 from google.auth import default
 from google.cloud import compute_v1
+import google.cloud.logging
 
-logging.basicConfig(level=logging.INFO)
+# Integrate Python logging with Cloud Logging for proper severity mapping and structured metadata
+google.cloud.logging.Client().setup_logging()
 logger = logging.getLogger(__name__)
 
 @functions_framework.cloud_event
 def start_stop_vm(cloud_event):
+    vm_name = zone = action = message_bytes = None
     try:
         data = cloud_event.data
         message_bytes = base64.b64decode(data["message"]["data"]).decode("utf-8")
@@ -21,26 +24,27 @@ def start_stop_vm(cloud_event):
 
         if action == "start":
             request = compute_v1.StartInstanceRequest(project=project, zone=zone, instance=vm_name)
-            compute_client.start(request=request)
+            compute_client.start(request=request).result()
             logger.info(f"Started VM {vm_name} in {zone}")
         elif action == "stop":
             request = compute_v1.StopInstanceRequest(project=project, zone=zone, instance=vm_name)
-            compute_client.stop(request=request)
+            compute_client.stop(request=request).result()
             logger.info(f"Stopped VM {vm_name} in {zone}")
         elif action == "create":
             create_vm(compute_client, project, zone, vm_name)
         else:
-            logger.error(f"Invalid action: {action}")
+            logger.error(f"Invalid action {action!r} for VM {vm_name} in {zone}")
             return
 
     except ValueError:
-        logger.error("Invalid message format. Expected: vm_name:zone:action")
+        logger.error(f"Invalid message format. Expected 'vm_name:zone:action', got: {message_bytes!r}")
     except exceptions.NotFound:
-        logger.error(f"VM not found.")
+        logger.error(f"VM {vm_name!r} not found in zone {zone!r}")
     except exceptions.PermissionDenied:
-        logger.error(f"Permission denied.")
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error(f"Permission denied performing {action!r} on VM {vm_name!r} in {zone!r}")
+    except Exception:
+        logger.exception(f"Unexpected error performing {action!r} on VM {vm_name!r} in {zone!r}")
+        raise  # NACK: let Pub/Sub retry on transient failures
 
 def create_vm(compute_client, project, zone, vm_name):
     try:
@@ -62,16 +66,23 @@ def create_vm(compute_client, project, zone, vm_name):
             network_interfaces=[
                 compute_v1.NetworkInterface(
                     network="global/networks/default",
-                    access_configs=[compute_v1.AccessConfig(name="External NAT")], # Removed TypeValue
+                    access_configs=[compute_v1.AccessConfig(name="External NAT")],
                 )
             ],
-            service_accounts=[compute_v1.ServiceAccount(email="default", scopes=["https://www.googleapis.com/auth/devstorage.read_write", "https://www.googleapis.com/auth/logging.write"])],
+            service_accounts=[compute_v1.ServiceAccount(
+                email="default",
+                scopes=[
+                    "https://www.googleapis.com/auth/devstorage.read_write",
+                    "https://www.googleapis.com/auth/logging.write",
+                ],
+            )],
         )
 
         request = compute_v1.InsertInstanceRequest(project=project, zone=zone, instance_resource=config)
-        compute_client.insert(request=request)
+        compute_client.insert(request=request).result()
         logger.info(f"Created VM {vm_name} in {zone}")
     except exceptions.NotFound:
-        logger.error(f"Image not found.")
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error(f"Debian-11 base image not found in 'debian-cloud' project")
+    except Exception:
+        logger.exception(f"Failed to create VM {vm_name!r} in zone {zone!r}")
+        raise
