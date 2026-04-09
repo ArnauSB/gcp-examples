@@ -3,7 +3,7 @@
 ## Create the Docker image
 
 First, we need to containerize our previous webserver application to be able to run it in Kubernetes. We will need a `Dockerfile` 
-to instruct how we want to build it. Once it's created, we can run:
+to instruct how we want to build it. The Dockerfile uses a multi-stage build: Go toolchain compiles the binary in the first stage, and only the static binary is copied into a minimal Alpine image, keeping the final image small. Once it's created, we can run:
 
 ```bash
 cd app
@@ -15,8 +15,20 @@ We can see the generated image by running:
 ```bash
 docker image ls
 ---
-webserver     latest    d94f50a32c7d   11 seconds ago   292MB
+webserver     latest    d94f50a32c7d   11 seconds ago   ~20MB
 ```
+
+The app exposes the following endpoints:
+
+| Path | Description |
+|------|-------------|
+| `/` | Hostname, remote addr, user-agent, and env vars (`PROJECT_ID`, `ZONE`, `INSTANCE_ID`) |
+| `/headers` | All request headers as JSON |
+| `/env` | All environment variables as JSON — useful for verifying K8s ConfigMaps/Secrets |
+| `/info` | Live GCP instance metadata (hostname, zone, machine-type, id) |
+| `/healthz` | Health check — returns `{"status":"ok"}` — used for liveness/readiness probes |
+
+All endpoints return `application/json`. Logs are emitted as structured JSON to stdout, compatible with Google Cloud Logging.
 
 And we will need to push it to a repository. In my case I will use Docker Hub. For this, we will need to rename the image:
 

@@ -1,16 +1,24 @@
-FROM golang:1.21-alpine
+FROM golang:1.21-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy the application source code
+# Copy module files first for layer caching
+COPY go.mod ./
+RUN go mod download
+
+# Copy source and build a static binary
 COPY . ./
+RUN CGO_ENABLED=0 GOOS=linux go build -o /webserver
 
-# Build the application binary
-RUN go build -o /webserver
+# --- final stage ---
+FROM alpine:3.19
 
-# Expose the port
+RUN adduser -D -g '' appuser
+
+COPY --from=builder /webserver /webserver
+
+USER appuser
+
 EXPOSE 8080
 
-# Set the command to run the application
 CMD ["/webserver"]
