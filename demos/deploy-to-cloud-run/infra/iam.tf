@@ -20,3 +20,10 @@ resource "google_project_iam_member" "sa_service_account_user" {
   role    = "roles/iam.serviceAccountUser"
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+
+# Permission to read vulnerability scan results from Container Analysis
+resource "google_project_iam_member" "sa_container_analysis_viewer" {
+  project = var.project_id
+  role    = "roles/containeranalysis.occurrences.viewer"
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}

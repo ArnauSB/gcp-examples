@@ -1,0 +1,20 @@
+# Terraform state and provider downloads — never belongs in an image.
+infra/
+
+# CI / build metadata — only used outside the container.
+cloudbuild.yaml
+Dockerfile
+.dockerignore
+
+# Python local state from running uvicorn outside Docker.
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv
+**/venv
+
+# Editor / OS noise.
+.vscode/
+.idea/
+.DS_Store
