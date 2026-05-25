@@ -5,7 +5,13 @@ resource "google_project_service" "apis" {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "containerscanning.googleapis.com",
-    "containeranalysis.googleapis.com"
+    "containeranalysis.googleapis.com",
+    # Required by the automated-rollback stack (rollback.tf)
+    "pubsub.googleapis.com",
+    "monitoring.googleapis.com",
+    "cloudfunctions.googleapis.com",
+    "eventarc.googleapis.com",
+    "storage.googleapis.com"
   ])
   service            = each.key
   disable_on_destroy = false
@@ -43,8 +49,11 @@ resource "google_cloudbuild_trigger" "api_trigger" {
   }
 
   included_files = ["demos/deploy-to-cloud-run/**"]
-  ignored_files  = ["demos/deploy-to-cloud-run/infra/**"]
-  filename       = "demos/deploy-to-cloud-run/cloudbuild.yaml"
+  ignored_files = [
+    "demos/deploy-to-cloud-run/infra/**",
+    "demos/deploy-to-cloud-run/rollback-function/**",
+  ]
+  filename = "demos/deploy-to-cloud-run/cloudbuild.yaml"
 
   depends_on = [google_project_service.apis]
 }

@@ -10,6 +10,7 @@ This demo leverages the following Google Cloud Platform services:
 * **Cloud Build:** Serverless CI/CD platform to build the Docker image and execute the deployment steps.
 * **Artifact Registry:** Secure private repository to store the built Docker images.
 * **Container Scanning / Container Analysis:** Automatically scans every image pushed to Artifact Registry for OS-package CVEs; the pipeline reads the findings and gates the deploy.
+* **Cloud Monitoring + Pub/Sub + Cloud Functions:** Detect 5xx-rate breaches on the canary revision and automatically roll traffic back to the previous stable revision.
 * **Cloud IAM:** Least-privilege service accounts to securely execute the pipeline.
 * **Terraform:** Provisions the foundational infrastructure and wires the GitHub trigger.
 
@@ -20,6 +21,7 @@ This demo leverages the following Google Cloud Platform services:
 4. Cloud Build deploys the new revision to Cloud Run with `0%` initial traffic (`--no-traffic`) and attaches the `canary` tag, giving the revision a stable URL like `https://canary---my-api-service-<hash>.<region>.run.app`.
 5. Cloud Build smoke-tests the canary revision by calling its tagged URL's `/health` endpoint. If the smoke test fails, the build fails and **no traffic is shifted**.
 6. Cloud Build executes a traffic update, routing `10%` of the traffic to the new revision and keeping `90%` on the previous stable revision.
+7. After traffic is split, **Cloud Monitoring** watches the canary's 5xx rate. If it breaches the SLO, a **Pub/Sub-triggered Cloud Function** automatically rolls traffic back to the previous stable revision — no human intervention required.
 
 ---
 
@@ -71,6 +73,56 @@ You can continuously ping your Cloud Run URL to observe the traffic splitting in
 ```bash
 while true; do curl -s https://YOUR_CLOUD_RUN_URL; echo ""; sleep 0.5; done
 ```
+
+---
+
+## ⏪ Automated Rollback on SLO Breach
+
+Smoke tests catch *broken* canaries; they don't catch canaries that pass `/health` but then fall over under real traffic. For that, the demo wires up an automatic rollback path.
+
+### How it works
+
+```
+Cloud Run 5xx metric  ─►  Cloud Monitoring alert policy
+                                 │
+                                 ▼
+                  Pub/Sub topic (canary-rollback-alerts)
+                                 │
+                                 ▼
+                  Cloud Function (canary-rollback)
+                                 │
+                                 ▼
+           gcloud run services update-traffic  ──►  100% to previous stable
+```
+
+1. A **Cloud Monitoring alert policy** ([rollback.tf](deploy-to-cloud-run/infra/rollback.tf)) watches `run.googleapis.com/request_count` filtered by `response_code_class = 5xx`, grouped by `revision_name`. Threshold: `> 2` 5xx req/min over a 60-second window — loose by design, so it's easy to demo. Tighten by editing `threshold_value` and `duration`.
+2. The alert routes through a **Pub/Sub notification channel**, publishing the incident payload to the `canary-rollback-alerts` topic.
+3. A **Cloud Function (Python 3.11, 2nd gen)** subscribes to the topic via Eventarc. Source lives in [rollback-function/](deploy-to-cloud-run/rollback-function/).
+4. The function uses the **Cloud Run Admin API** (`google-cloud-run`) to:
+   - Look up the offending revision in `service.traffic`
+   - **Refuse** to roll back if that revision carries ≥50% of traffic and has no canary tag (safety against reverting the stable in a real outage)
+   - Otherwise, rewrite the traffic split so the largest *other* revision gets 100%
+
+### Triggering it deliberately
+The cleanest way to demo it is to ship a canary that returns 500 on the root path:
+
+```python
+@app.get("/")
+def read_root():
+    raise HTTPException(status_code=500, detail="canary on fire")
+```
+
+Push, let the canary smoke test pass on `/health`, let traffic split 90/10, then loop `curl` against the service URL. Once a handful of requests hit the broken 10%, the alert fires and the function reverts traffic to V1.
+
+### Watching it work
+- **Alert state:** Cloud Monitoring → Alerting → `Cloud Run canary 5xx rate`
+- **Function logs:** Cloud Functions → `canary-rollback` → Logs. You'll see either `Rolling back: <bad> -> <stable>` or the `refusing to auto-roll-back the stable revision` safety message.
+- **Final traffic split:** `gcloud run services describe my-api-service --region=europe-west1 --format='value(status.traffic)'`
+
+### Tuning
+- **Threshold:** change `threshold_value` / `duration` on `google_monitoring_alert_policy.canary_5xx`. Real services would use an SLO-burn-rate alert instead of raw 5xx count.
+- **Safety policy:** the `>= 50% AND no canary tag` heuristic lives in [rollback-function/main.py](deploy-to-cloud-run/rollback-function/main.py). Adjust to taste — e.g., require the canary tag explicitly before rolling back.
+- **Retry policy:** the function trigger uses `RETRY_POLICY_DO_NOT_RETRY` so a transient API error doesn't double-roll-back. Switch to `RETRY_POLICY_RETRY` if you'd rather pay the risk.
 
 ---
 
