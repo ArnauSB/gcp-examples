@@ -51,10 +51,12 @@ steps:
         fi
         echo "Vulnerability gate PASSED."
 
-  # Deploy to Cloud Run.
+  # Deploy to Cloud Run as a canary: --no-traffic keeps the new revision off
+  # the production split until the progressive-ramp step opens the tap, and
   # --tag=canary attaches a stable tagged URL (canary---<service>-...run.app)
-  # to the new revision so the next step can smoke-test it in isolation,
-  # regardless of traffic percentage.
+  # so the smoke-test and bake checks can hit the new revision directly,
+  # regardless of traffic percentage. On the very first deploy, the Terraform-
+  # provisioned `cloudrun/container/hello` placeholder acts as the V0 stable.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -68,7 +70,7 @@ steps:
       - '--allow-unauthenticated'
       - '--tag'
       - 'canary'
-      #- '--no-traffic' # Deploys the new revision but routes 0% traffic to it
+      - '--no-traffic'
 
   # Smoke test the new revision via its canary-tagged URL before any traffic
   # is shifted. If /health does not return 200 within the retry window, the
@@ -101,20 +103,94 @@ steps:
         echo "Smoke test FAILED after 12 attempts. Not shifting traffic."
         exit 1
 
-  # Update Traffic Splitting (90% to previous, 10% to new)
-  #- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  #  entrypoint: gcloud
-  #  args:
-  #    - 'run'
-  #    - 'services'
-  #    - 'update-traffic'
-  #    - 'my-api-service'
-  #    - '--region'
-  #    - 'europe-west1'
-  #    - '--to-revisions'
-  #    - 'LATEST=10' # Assigns 10% of traffic to the revision we just deployed
+  # Progressive canary ramp: 10% -> 50% -> 100%, with an inline curl-based
+  # health check during each bake window. If 5xx responses exceed the
+  # tolerance, Cloud Build reverts traffic to the previous stable revision and
+  # fails the build. Comment out this entire step for the very first (V1)
+  # deploy alongside --no-traffic above.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        SERVICE=my-api-service
+        REGION=europe-west1
+        BAKE_SECONDS=${_BAKE_SECONDS}
+        MAX_5XX=${_MAX_5XX}
+        SAMPLE_INTERVAL=5
+
+        describe() {
+          gcloud run services describe "$$SERVICE" --region="$$REGION" --format=json
+        }
+
+        LATEST=$(describe | jq -r '
+          [.status.traffic[] | select(.tag=="canary") | .revisionName][0] // empty')
+        STABLE=$(describe | jq -r '
+          [.status.traffic[]
+            | select(.tag != "canary")
+            | select(.revisionName != null)
+            | select(.percent > 0)]
+          | sort_by(.percent) | reverse | .[0].revisionName // empty')
+
+        if [ -z "$$LATEST" ]; then
+          echo "No canary-tagged revision found. Did --tag=canary run on the deploy step?"
+          exit 1
+        fi
+        if [ -z "$$STABLE" ]; then
+          echo "No baseline revision in traffic. Deploy V1 at 100% before enabling the ramp."
+          exit 1
+        fi
+        echo "Canary revision: $$LATEST"
+        echo "Stable revision: $$STABLE"
+
+        bake() {
+          local stage="$$1"
+          local url
+          url=$(describe | jq -r '.status.traffic[] | select(.tag=="canary") | .url')
+          local attempts=$(( BAKE_SECONDS / SAMPLE_INTERVAL ))
+          local fails=0
+          echo "[stage $$stage] baking $${BAKE_SECONDS}s, sampling $$url/ every $${SAMPLE_INTERVAL}s..."
+          for i in $(seq 1 $$attempts); do
+            local code
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$$url/" || echo "000")
+            if [ "$$code" -ge "500" ]; then
+              fails=$(( fails + 1 ))
+              echo "[stage $$stage] sample $$i/$$attempts: HTTP $$code ($$fails 5xx so far)"
+              if [ "$$fails" -gt "$$MAX_5XX" ]; then
+                echo "[stage $$stage] FAILED: $$fails 5xx exceeds tolerance $$MAX_5XX."
+                echo "Reverting traffic to $$STABLE and dropping canary tag..."
+                gcloud run services update-traffic "$$SERVICE" --region="$$REGION" \
+                  --to-revisions="$$STABLE=100" --remove-tags=canary
+                exit 1
+              fi
+            fi
+            sleep "$$SAMPLE_INTERVAL"
+          done
+          echo "[stage $$stage] passed ($$fails 5xx, within tolerance $$MAX_5XX)."
+        }
+
+        echo "===== Stage 1: 10% canary ====="
+        gcloud run services update-traffic "$$SERVICE" --region="$$REGION" \
+          --to-revisions="$$LATEST=10,$$STABLE=90" --update-tags="canary=$$LATEST"
+        bake "10%"
+
+        echo "===== Stage 2: 50% canary ====="
+        gcloud run services update-traffic "$$SERVICE" --region="$$REGION" \
+          --to-revisions="$$LATEST=50,$$STABLE=50" --update-tags="canary=$$LATEST"
+        bake "50%"
+
+        echo "===== Stage 3: 100% (graduate) ====="
+        gcloud run services update-traffic "$$SERVICE" --region="$$REGION" \
+          --to-revisions="$$LATEST=100" --remove-tags=canary
+        echo "Canary fully promoted. $$LATEST is the new stable revision."
 
 substitutions:
   # Comma-separated severities that should fail the build (e.g. CRITICAL,HIGH).
   # Set to NONE to disable the gate entirely and always deploy.
   _FAIL_SEVERITIES: 'CRITICAL'
+  # How long to bake at each canary stage before promoting to the next.
+  _BAKE_SECONDS: '120'
+  # Tolerance for 5xx responses observed during a bake window. Exceeding this
+  # triggers an in-build revert to the previous stable revision.
+  _MAX_5XX: '2'
