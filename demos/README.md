@@ -17,8 +17,9 @@ This demo leverages the following Google Cloud Platform services:
 1. A push to the `main` branch triggers Google Cloud Build.
 2. Cloud Build builds the Docker image and pushes it to Artifact Registry.
 3. Artifact Registry scans the image; Cloud Build polls the Container Analysis API and **fails the build** if any finding matches the configured severity threshold (default `CRITICAL`).
-4. Cloud Build deploys the new revision to Cloud Run with `0%` initial traffic (`--no-traffic`).
-5. Cloud Build executes a traffic update, routing `10%` of the traffic to the new revision and keeping `90%` on the previous stable revision.
+4. Cloud Build deploys the new revision to Cloud Run with `0%` initial traffic (`--no-traffic`) and attaches the `canary` tag, giving the revision a stable URL like `https://canary---my-api-service-<hash>.<region>.run.app`.
+5. Cloud Build smoke-tests the canary revision by calling its tagged URL's `/health` endpoint. If the smoke test fails, the build fails and **no traffic is shifted**.
+6. Cloud Build executes a traffic update, routing `10%` of the traffic to the new revision and keeping `90%` on the previous stable revision.
 
 ---
 
@@ -49,17 +50,20 @@ By default, the `cloudbuild.yaml` is configured for a canary deployment. However
 For your very first deployment:
 
 1. Open `cloudbuild.yaml`.
-2. Temporarily comment out the --no-traffic flag in Step 3.
-3. Temporarily comment out the entirety of Step 4 (the update-traffic command).
+2. Temporarily comment out the `--no-traffic` flag in the **Deploy to Cloud Run** step.
+3. Temporarily comment out the entirety of the **Update Traffic Splitting** step.
 4. Commit and push your code to GitHub. This will deploy the baseline version (V1) taking 100% of the traffic.
+
+> The vulnerability gate and the smoke test both still run for V1. The smoke test resolves the `canary`-tagged URL (which on V1 just points to the only revision) and confirms `/health` returns 200 before the build is marked successful.
 
 ### 3. Canary Deployment (V2)
 Once V1 is live, you can test the Canary pipeline:
 
-1. Revert `cloudbuild.yaml` to its original state (uncomment --no-traffic and Step 4).
+1. Revert `cloudbuild.yaml` to its original state (uncomment `--no-traffic` and the **Update Traffic Splitting** step).
 2. Make a visible change to the application code.
 3. Commit and push your changes to GitHub.
-4. Cloud Build will deploy the new version and automatically split the traffic (90% to V1, 10% to V2).
+4. Cloud Build deploys V2 with `--no-traffic --tag=canary`, smoke-tests it against its tagged URL, and only then splits the traffic (90% to V1, 10% to V2).
+5. If the smoke test fails (e.g. you ship a broken `/health`), the build aborts before `update-traffic` runs — V1 keeps 100% of the traffic.
 
 ### 4. Verify Traffic Splitting
 You can continuously ping your Cloud Run URL to observe the traffic splitting in action:
@@ -67,6 +71,23 @@ You can continuously ping your Cloud Run URL to observe the traffic splitting in
 ```bash
 while true; do curl -s https://YOUR_CLOUD_RUN_URL; echo ""; sleep 0.5; done
 ```
+
+---
+
+## 🧪 Canary Smoke Test
+
+The pipeline doesn't trust a freshly deployed revision until it answers a real HTTP request. After `gcloud run deploy --tag=canary --no-traffic`, the revision is reachable **only** through its tagged URL — production traffic still goes to V1.
+
+The smoke-test step:
+1. Resolves the canary URL by reading `.status.traffic[]` from `gcloud run services describe` and selecting the entry where `tag == "canary"`.
+2. Hits `<canary-url>/health` and retries every 5 seconds for up to a minute (12 attempts) to absorb cold-start latency.
+3. On the first `200`, prints the response body and continues to the traffic split.
+4. After 12 non-200 responses, fails the build — `update-traffic` is never invoked, so no real users see the broken revision.
+
+### Tweaking the smoke test
+- **Path:** change `/health` to whatever endpoint you want to validate. For richer checks, replace the single `curl` with a small script that hits multiple paths or validates response bodies with `jq`.
+- **Retry budget:** the loop is `seq 1 12` with a 5-second sleep — adjust if your app has a longer cold start.
+- **Auth:** the demo service uses `--allow-unauthenticated`. For a private service, swap `curl` for `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)"`.
 
 ---
 

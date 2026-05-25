@@ -51,7 +51,10 @@ steps:
         fi
         echo "Vulnerability gate PASSED."
 
-  # Deploy to Cloud Run
+  # Deploy to Cloud Run.
+  # --tag=canary attaches a stable tagged URL (canary---<service>-...run.app)
+  # to the new revision so the next step can smoke-test it in isolation,
+  # regardless of traffic percentage.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -63,7 +66,40 @@ steps:
       - '--region'
       - 'europe-west1'
       - '--allow-unauthenticated'
+      - '--tag'
+      - 'canary'
       #- '--no-traffic' # Deploys the new revision but routes 0% traffic to it
+
+  # Smoke test the new revision via its canary-tagged URL before any traffic
+  # is shifted. If /health does not return 200 within the retry window, the
+  # build fails and the traffic-split step never runs.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        TAGGED_URL=$(gcloud run services describe my-api-service \
+          --region=europe-west1 --format=json \
+          | jq -r '.status.traffic[] | select(.tag=="canary") | .url')
+        if [ -z "$$TAGGED_URL" ] || [ "$$TAGGED_URL" = "null" ]; then
+          echo "Could not resolve the canary-tagged URL. Aborting."
+          exit 1
+        fi
+        echo "Smoke-testing canary revision at $$TAGGED_URL/health"
+        for i in $(seq 1 12); do
+          HTTP_CODE=$(curl -s -o /tmp/smoke_body -w "%{http_code}" \
+            "$$TAGGED_URL/health" || echo "000")
+          if [ "$$HTTP_CODE" = "200" ]; then
+            echo "Smoke test PASSED (HTTP $$HTTP_CODE)."
+            cat /tmp/smoke_body; echo
+            exit 0
+          fi
+          echo "Got HTTP $$HTTP_CODE, retrying in 5s ($$i/12)..."
+          sleep 5
+        done
+        echo "Smoke test FAILED after 12 attempts. Not shifting traffic."
+        exit 1
 
   # Update Traffic Splitting (90% to previous, 10% to new)
   #- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
