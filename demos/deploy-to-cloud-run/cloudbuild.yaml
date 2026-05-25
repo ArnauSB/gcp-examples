@@ -14,6 +14,43 @@ steps:
       - 'push'
       - 'europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA'
 
+  # Vulnerability gate: wait for the Artifact Registry scan, then block the
+  # deploy if any finding matches the configured severity threshold.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE="europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA"
+        FAIL_SEVERITIES="${_FAIL_SEVERITIES}"
+        if [ -z "$$FAIL_SEVERITIES" ] || [ "$$FAIL_SEVERITIES" = "NONE" ]; then
+          echo "Vulnerability gate DISABLED (_FAIL_SEVERITIES=$$FAIL_SEVERITIES). Skipping scan check."
+          exit 0
+        fi
+        echo "Waiting for vulnerability scan to complete on $$IMAGE..."
+        for i in $(seq 1 30); do
+          RESULT=$(gcloud artifacts docker images describe "$$IMAGE" \
+            --show-package-vulnerability --format=json 2>/dev/null || echo '{}')
+          if echo "$$RESULT" | jq -e '.package_vulnerability_summary' >/dev/null 2>&1; then
+            break
+          fi
+          echo "Scan not ready yet, retrying in 10s ($$i/30)..."
+          sleep 10
+        done
+        echo "Scan complete. Checking findings against threshold: $$FAIL_SEVERITIES"
+        BLOCKING=$(echo "$$RESULT" | jq --arg sev "$$FAIL_SEVERITIES" '
+          [.package_vulnerability_summary.vulnerabilities // {} | to_entries[]
+           | select(.key as $$k | ($$sev | split(",")) | index($$k))
+           | .value | length] | add // 0')
+        echo "$$RESULT" | jq -r '.package_vulnerability_summary.vulnerabilities // {}
+          | to_entries[] | "\(.key): \(.value | length)"'
+        if [ "$$BLOCKING" -gt 0 ]; then
+          echo "Vulnerability gate FAILED: $$BLOCKING finding(s) at severity in [$$FAIL_SEVERITIES]."
+          exit 1
+        fi
+        echo "Vulnerability gate PASSED."
+
   # Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -40,3 +77,8 @@ steps:
   #    - 'europe-west1'
   #    - '--to-revisions'
   #    - 'LATEST=10' # Assigns 10% of traffic to the revision we just deployed
+
+substitutions:
+  # Comma-separated severities that should fail the build (e.g. CRITICAL,HIGH).
+  # Set to NONE to disable the gate entirely and always deploy.
+  _FAIL_SEVERITIES: 'CRITICAL'
