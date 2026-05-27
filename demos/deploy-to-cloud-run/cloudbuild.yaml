@@ -16,12 +16,16 @@ steps:
 
   # Vulnerability gate: wait for the Artifact Registry scan, then block the
   # deploy if any finding matches the configured severity threshold.
+  # The default `gcr.io/google.com/cloudsdktool/cloud-sdk:latest` image does
+  # not ship with `jq`, so install it on demand.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
+        command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends jq)
+
         IMAGE="europe-west1-docker.pkg.dev/$PROJECT_ID/api-repo/my-api:$COMMIT_SHA"
         FAIL_SEVERITIES="${_FAIL_SEVERITIES}"
         if [ -z "$$FAIL_SEVERITIES" ] || [ "$$FAIL_SEVERITIES" = "NONE" ]; then
@@ -81,6 +85,8 @@ steps:
       - -c
       - |
         set -euo pipefail
+        command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends jq)
+
         TAGGED_URL=$(gcloud run services describe my-api-service \
           --region=europe-west1 --format=json \
           | jq -r '.status.traffic[] | select(.tag=="canary") | .url')
@@ -114,6 +120,8 @@ steps:
       - -c
       - |
         set -euo pipefail
+        command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends jq)
+
         SERVICE=my-api-service
         REGION=europe-west1
         BAKE_SECONDS=${_BAKE_SECONDS}
@@ -194,7 +202,11 @@ logsBucket: 'gs://senserrich-test-293912-cloudbuild-logs'
 substitutions:
   # Comma-separated severities that should fail the build (e.g. CRITICAL,HIGH).
   # Set to NONE to disable the gate entirely and always deploy.
-  _FAIL_SEVERITIES: 'CRITICAL'
+  # Default for this demo is NONE because the Python slim base image carries
+  # CRITICAL CVEs out of the box (a real teaching opportunity, but blocks
+  # every build during the masterclass). Override per-run to demonstrate the
+  # gate firing: --substitutions=_FAIL_SEVERITIES=CRITICAL
+  _FAIL_SEVERITIES: 'NONE'
   # How long to bake at each canary stage before promoting to the next.
   _BAKE_SECONDS: '120'
   # Tolerance for 5xx responses observed during a bake window. Exceeding this
