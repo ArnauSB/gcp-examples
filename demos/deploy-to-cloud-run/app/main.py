@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 # ============================================================================
 
 VERSION = "v1"
-COLOR = "green"
+COLOR = "red"
 MESSAGE = "Hello from Cloud Run — stable version"
 
 # Flip to True for the V3 broken-canary demo. Only `/` returns 500; `/health`
