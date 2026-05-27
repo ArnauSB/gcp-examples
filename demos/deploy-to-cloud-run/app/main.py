@@ -6,14 +6,14 @@ from fastapi import FastAPI, HTTPException
 # Demo configuration — edit these between pushes to walk the V1 → V4 demo.
 # ============================================================================
 
-VERSION = "v1"
-COLOR = "green"
+VERSION = "v2"
+COLOR = "blue"
 MESSAGE = "Hello from Cloud Run — stable version"
 
 # Flip to True for the V3 broken-canary demo. Only `/` returns 500; `/health`
 # stays healthy so the smoke test still passes and the progressive ramp
 # actually starts — the inline bake check is what we want to catch the failure.
-FAIL_ROOT = False
+FAIL_ROOT = True
 
 # ============================================================================
 
