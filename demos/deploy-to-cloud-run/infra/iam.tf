@@ -37,9 +37,11 @@ resource "google_project_iam_member" "sa_logs_writer" {
 }
 
 # Allow the build SA to write log files to the dedicated logs bucket
-# (main.tf -> google_storage_bucket.cloudbuild_logs).
+# (main.tf -> google_storage_bucket.cloudbuild_logs). storage.admin (scoped
+# to a single bucket) is broader than objectAdmin but covers the bucket-level
+# permission checks Cloud Build performs before accepting the build.
 resource "google_storage_bucket_iam_member" "sa_cloudbuild_logs_writer" {
   bucket = google_storage_bucket.cloudbuild_logs.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.admin"
   member = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
