@@ -27,3 +27,12 @@ resource "google_project_iam_member" "sa_container_analysis_viewer" {
   role    = "roles/containeranalysis.occurrences.viewer"
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+
+# Required when cloudbuild.yaml uses options.logging = CLOUD_LOGGING_ONLY: the
+# build SA must be allowed to write logs to Cloud Logging itself (the default
+# Cloud Build SA gets this implicitly; a user-managed SA does not).
+resource "google_project_iam_member" "sa_logs_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
