@@ -185,6 +185,13 @@ steps:
           --to-revisions="$$LATEST=100" --remove-tags=canary
         echo "Canary fully promoted. $$LATEST is the new stable revision."
 
+options:
+  # Required when the trigger uses a user-managed service account: without it,
+  # Cloud Build refuses the run unless a custom logs_bucket is provided.
+  # CLOUD_LOGGING_ONLY sends build logs to Cloud Logging only — no GCS bucket
+  # needed, and logs show up in the Cloud Build UI as normal.
+  logging: CLOUD_LOGGING_ONLY
+
 substitutions:
   # Comma-separated severities that should fail the build (e.g. CRITICAL,HIGH).
   # Set to NONE to disable the gate entirely and always deploy.
