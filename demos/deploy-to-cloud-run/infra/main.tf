@@ -82,3 +82,25 @@ resource "google_cloud_run_service_iam_member" "public_access" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+# 7. Dedicated GCS bucket for Cloud Build logs. Required because the trigger
+# uses a user-managed service account, which forbids writing to the default
+# Cloud Build logs bucket. With this set as `logs_bucket` in cloudbuild.yaml,
+# both the Cloud Build UI and `gcloud builds log` work without --beta hacks.
+resource "google_storage_bucket" "cloudbuild_logs" {
+  name                        = "senserrich-test-293912-cloudbuild-logs"
+  location                    = var.region
+  uniform_bucket_level_access = true
+  force_destroy               = true # let `terraform destroy` clean it up even with objects inside
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}

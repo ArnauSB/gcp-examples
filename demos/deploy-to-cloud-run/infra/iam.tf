@@ -28,11 +28,18 @@ resource "google_project_iam_member" "sa_container_analysis_viewer" {
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
 
-# Required when cloudbuild.yaml uses options.logging = CLOUD_LOGGING_ONLY: the
-# build SA must be allowed to write logs to Cloud Logging itself (the default
-# Cloud Build SA gets this implicitly; a user-managed SA does not).
+# Cloud Build streams logs to Cloud Logging in addition to the GCS bucket;
+# the build SA needs permission to write log entries.
 resource "google_project_iam_member" "sa_logs_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+# Allow the build SA to write log files to the dedicated logs bucket
+# (main.tf -> google_storage_bucket.cloudbuild_logs).
+resource "google_storage_bucket_iam_member" "sa_cloudbuild_logs_writer" {
+  bucket = google_storage_bucket.cloudbuild_logs.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
