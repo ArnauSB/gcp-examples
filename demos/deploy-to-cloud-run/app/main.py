@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException
 # Demo configuration — edit these between pushes to walk the V1 → V4 demo.
 # ============================================================================
 
-VERSION = "v1"
-COLOR = "red"
+VERSION = "v2"
+COLOR = "green"
 MESSAGE = "Hello from Cloud Run — stable version"
 
 # Flip to True for the V3 broken-canary demo. Only `/` returns 500; `/health`
